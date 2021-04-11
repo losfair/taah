@@ -18,8 +18,8 @@ $(makeLenses ''St)
 
 mkSt :: MonadIO m => m St
 mkSt = do
-  listenAddrInput <- liftIO $ newIORef ""
-  listenServiceInput <- liftIO $ newIORef ""
+  listenAddrInput <- liftIO $ newIORef "127.0.0.1"
+  listenServiceInput <- liftIO $ newIORef "2233"
   return St {
     _stCounter = 0,
     _stListener = Nothing,

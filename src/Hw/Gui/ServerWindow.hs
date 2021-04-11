@@ -31,7 +31,8 @@ render = do
   current <- get
   G.text $ "Frame count: " ++ show (view stCounter current)
   case view stListener current of
-    Just listener -> return ()
+    Just listener -> do
+      G.text $ "Listening on " ++ show (apiListenAddr listener)
     Nothing -> do
       G.inputText "Listen address" (view stListenAddrInput current) 256
       G.inputText "Service/port" (view stListenServiceInput current) 32
@@ -47,5 +48,6 @@ render = do
         listener <- liftIO $ generateServer config
         put $ set stListener (Just listener) current
         return ()
+  current <- get
   put $ over stCounter (+ 1) current
   pure ()

@@ -1,7 +1,7 @@
 module Hw.Server (
   generateServer,
   ServerConfig(ServerConfig), cfgListenIP, cfgListenService, cfgAccountDbPath,
-  ServerApi, apiMessageBus
+  ServerApi, apiMessageBus, apiListenAddr
 ) where
 
 import Control.Concurrent.Chan
@@ -20,7 +20,8 @@ data ServerConfig = ServerConfig {
 }
 
 data ServerApi = ServerApi {
-  apiMessageBus :: Chan ServerMessage
+  apiMessageBus :: Chan ServerMessage,
+  apiListenAddr :: Sock.SockAddr
 }
 
 data ServiceState = ServiceState {
@@ -36,7 +37,8 @@ data ServerMessage =
 generateServer :: ServerConfig -> IO ServerApi
 generateServer config = do
   dbConn <- DB.open $ cfgAccountDbPath config
-  listener <- resolve >>= listen
+  resolvedAddr <- resolve
+  listener <- listen resolvedAddr
   messageBus <- newChan
   let st = ServiceState {
     stDbConn = dbConn,
@@ -44,7 +46,7 @@ generateServer config = do
     stMessageBus = messageBus
   }
   forkIO $ runServer st
-  pure ServerApi { apiMessageBus = messageBus }
+  pure ServerApi { apiMessageBus = messageBus, apiListenAddr = Sock.addrAddress resolvedAddr }
   where
     resolve = do
       let hints = Sock.defaultHints { Sock.addrFlags = [Sock.AI_PASSIVE], Sock.addrSocketType = Sock.Stream}

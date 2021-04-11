@@ -48,16 +48,16 @@ main = do
 
 data LoopContext = LoopContext {
   lcServerWS :: IORef ServerWindow.St,
-  lcPendingException :: IORef (Maybe String)
+  lcServerPendingException :: IORef (Maybe String)
 }
 
 runMainLoop :: Window -> IO ()
 runMainLoop win = do
   serverWS <- ServerWindow.mkSt >>= newIORef
-  pendingException <- newIORef Nothing
+  serverPendingException <- newIORef Nothing
   let ctx = LoopContext {
     lcServerWS = serverWS,
-    lcPendingException = pendingException
+    lcServerPendingException = serverPendingException
   }
   mainLoop win ctx
 
@@ -75,8 +75,8 @@ mainLoop win ctx = do
 
     -- Build the GUI
     bracket_ (G.begin "Server") G.end $
-      handle (catchWindowException $ lcPendingException ctx) do
-        renderWindowException (lcPendingException ctx)
+      handle (catchWindowException $ lcServerPendingException ctx) do
+        renderWindowException (lcServerPendingException ctx)
         stIn <- readIORef (lcServerWS ctx)
         (_, out) <- runStateT ServerWindow.render stIn
         writeIORef (lcServerWS ctx) $! out

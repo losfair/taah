@@ -11,7 +11,6 @@ import qualified Network.Socket as Sock
 import Control.Exception
 import Control.Monad.Managed
 import Control.Monad
-import Hw.User ( UserInfo(UserInfo) )
 import Control.Concurrent.STM
 import qualified Network.Socket.ByteString as SockBS
 import qualified Data.ByteString as B
@@ -21,7 +20,7 @@ import Data.Word
 import Control.Lens
 import Data.ByteString.Internal (c2w)
 import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 
 data ServerConfig = ServerConfig {
   cfgListenIP :: String,
@@ -43,7 +42,8 @@ data ServiceState = ServiceState {
 data ServerMessage =
   MsgNewClient Sock.SockAddr 
   | MsgAuthFailed Sock.SockAddr
-  | MsgClientAuthenticated Sock.SockAddr UserInfo
+  | MsgClientAuthenticated Sock.SockAddr T.Text
+  | MsgChar Sock.SockAddr Word8
   deriving (Show)
 
 data ConnState = ConnState {
@@ -99,9 +99,9 @@ handleConnection st conn peer = do
 
   -- Auth
   liftIO $ SockBS.sendAll conn "Username: "
-  username_ <- readBytesUntil conn (c2w '\n')
+  username_ <- readBytesUntil conn (== c2w '\n')
   liftIO $ SockBS.sendAll conn "Password: "
-  password_ <- readBytesUntil conn (c2w '\n')
+  password_ <- readBytesUntil conn (== c2w '\n')
 
   let username = T.strip $ decodeUtf8 username_
   let password = T.dropWhileEnd (\x -> x == '\r' || x == '\n') $ decodeUtf8 password_
@@ -116,30 +116,32 @@ handleConnection st conn peer = do
             (DB.Only t):_ -> t == password
             [] -> False
   if ok then do
-    writeMbus st (MsgClientAuthenticated peer UserInfo {})
-    enterSession st conn peer
+    writeMbus st (MsgClientAuthenticated peer username)
+    enterSession st conn peer username
   else do
     writeMbus st (MsgAuthFailed peer)
     liftIO $ SockBS.sendAll conn "Authentication failed.\r\n"
 
-enterSession :: (MonadIO m, MonadState ConnState m) => ServiceState -> Sock.Socket -> Sock.SockAddr -> m ()
-enterSession st conn peer = do
-  liftIO $ SockBS.sendAll conn "Hello!\r\n"
+enterSession :: (MonadIO m, MonadState ConnState m) => ServiceState -> Sock.Socket -> Sock.SockAddr -> T.Text -> m ()
+enterSession st conn peer username = do
+  liftIO $ SockBS.sendAll conn $ encodeUtf8 $ T.pack ("You are now authenticated as " ++ T.unpack username ++ ".\r\n")
+  forever do
+    b <- readBytesUntil conn (const True)
+    writeMbus st (MsgChar peer $ B.head b)
 
-readBytesUntil :: (MonadIO m, MonadState ConnState m) => Sock.Socket -> Word8 -> m B.ByteString
-readBytesUntil conn terminator = do
+readBytesUntil :: (MonadIO m, MonadState ConnState m) => Sock.Socket -> (Word8 -> Bool) -> m B.ByteString
+readBytesUntil conn terminateCondition = do
   initBuf <- get
   buffers <- search (view csRecvBuffer initBuf) (SockBS.recv conn 4096)
   return $ B.intercalate B.empty buffers
   where
     search :: (MonadIO m, MonadState ConnState m) => B.ByteString -> IO B.ByteString -> m [B.ByteString]
-    search x next = case B.findIndex (== terminator) x of
+    search x next = case B.findIndex terminateCondition x of
       Just i_ -> do
         -- Save the remaining bytes into the buffer
         -- Include the terminating byte
         let i = i_ + 1
-        when (i < B.length x) do
-          get >>= put . set csRecvBuffer (B.drop i x)
+        get >>= put . set csRecvBuffer (B.drop i x)
         return [B.take i x]
       Nothing -> do
         nextBuf <- liftIO next

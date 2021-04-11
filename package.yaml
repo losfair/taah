@@ -1,0 +1,65 @@
+name:                network-hw
+version:             0.1.0.0
+github:              "losfair/network-hw"
+license:             MIT
+author:              "Heyang Zhou"
+maintainer:          "heyang.zhou@icloud.com"
+copyright:           "2021 Heyang Zhou"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/network-hw#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- dear-imgui
+- managed
+- gl
+- GLFW-b
+- network
+- sqlite-simple
+- mtl
+- lens
+- StateVar
+
+default-extensions:
+- OverloadedStrings
+- LambdaCase
+- BlockArguments
+- FlexibleContexts
+- TemplateHaskell
+- ScopedTypeVariables
+
+library:
+  source-dirs: src
+
+executables:
+  network-hw-server-exe:
+    main:                Main.hs
+    source-dirs:         app-server
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - network-hw
+
+tests:
+  network-hw-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - network-hw

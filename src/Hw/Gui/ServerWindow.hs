@@ -1,0 +1,51 @@
+module Hw.Gui.ServerWindow (St, mkSt, render) where
+
+import Control.Monad.State
+import qualified DearImGui as G
+import Control.Lens
+import Data.IORef
+import Hw.Server
+
+data St = St {
+  _stCounter :: Int,
+  _stListener :: Maybe ServerApi,
+  _stListenAddrInput :: IORef String,
+  _stListenServiceInput :: IORef String
+}
+
+$(makeLenses ''St)
+
+mkSt :: MonadIO m => m St
+mkSt = do
+  listenAddrInput <- liftIO $ newIORef ""
+  listenServiceInput <- liftIO $ newIORef ""
+  return St {
+    _stCounter = 0,
+    _stListener = Nothing,
+    _stListenAddrInput = listenAddrInput,
+    _stListenServiceInput = listenServiceInput
+  }
+
+render :: (MonadIO m, MonadState St m) => m ()
+render = do
+  current <- get
+  G.text $ "Frame count: " ++ show (view stCounter current)
+  case view stListener current of
+    Just listener -> return ()
+    Nothing -> do
+      G.inputText "Listen address" (view stListenAddrInput current) 256
+      G.inputText "Service/port" (view stListenServiceInput current) 32
+      wantsListen <- G.button "Listen"
+      when wantsListen do
+        listenIP <- liftIO $ readIORef (view stListenAddrInput current)
+        listenService <- liftIO $ readIORef (view stListenServiceInput current)
+        let config = ServerConfig {
+          cfgListenIP = listenIP,
+          cfgListenService = listenService,
+          cfgAccountDbPath = ""
+        }
+        listener <- liftIO $ generateServer config
+        put $ set stListener (Just listener) current
+        return ()
+  put $ over stCounter (+ 1) current
+  pure ()

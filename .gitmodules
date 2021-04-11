@@ -1,0 +1,3 @@
+[submodule "vendor/dear-imgui.hs"]
+	path = vendor/dear-imgui.hs
+	url = https://github.com/losfair/dear-imgui.hs

@@ -50,7 +50,7 @@ render = do
         let config = ServerConfig {
           cfgListenIP = listenIP,
           cfgListenService = listenService,
-          cfgAccountDbPath = ""
+          cfgAccountDbPath = "./users.db"
         }
         listener <- liftIO $ generateServer config
         put $ set stListener (Just listener) current

@@ -4,14 +4,22 @@ module Hw.Server (
   ServerApi, apiMessageBus, apiListenAddr
 ) where
 
-import Control.Concurrent.Chan
+import Control.Concurrent.STM.TQueue
 import qualified Database.SQLite.Simple as DB
 import Control.Concurrent
 import qualified Network.Socket as Sock
 import Control.Exception
 import Control.Monad.Managed
 import Control.Monad
-import Hw.User
+import Hw.User ( UserInfo )
+import Control.Concurrent.STM
+import qualified Network.Socket.ByteString as SockBS
+import qualified Data.ByteString as B
+import Data.IORef
+import Control.Monad.State
+import Data.Word
+import Control.Lens
+import Data.ByteString.Internal (c2w)
 
 data ServerConfig = ServerConfig {
   cfgListenIP :: String,
@@ -20,26 +28,33 @@ data ServerConfig = ServerConfig {
 }
 
 data ServerApi = ServerApi {
-  apiMessageBus :: Chan ServerMessage,
+  apiMessageBus :: TQueue ServerMessage,
   apiListenAddr :: Sock.SockAddr
 }
 
 data ServiceState = ServiceState {
   stDbConn :: DB.Connection,
   stListener :: Sock.Socket,
-  stMessageBus :: Chan ServerMessage
+  stMessageBus :: TQueue ServerMessage
 }
 
 data ServerMessage =
   MsgNewClient Sock.SockAddr 
   | MsgClientAuthenticated Sock.SockAddr UserInfo
   deriving (Show)
+
+data ConnState = ConnState {
+  _csRecvBuffer :: B.ByteString
+}
+
+$(makeLenses ''ConnState)
+
 generateServer :: ServerConfig -> IO ServerApi
 generateServer config = do
   dbConn <- DB.open $ cfgAccountDbPath config
   resolvedAddr <- resolve
   listener <- listen resolvedAddr
-  messageBus <- newChan
+  messageBus <- newTQueueIO
   let st = ServiceState {
     stDbConn = dbConn,
     stListener = listener,
@@ -63,10 +78,42 @@ generateServer config = do
 runServer :: ServiceState -> IO ()
 runServer st = forever do
   (conn, peer) <- onException (Sock.accept $ stListener st) (Sock.close $ stListener st)
-  forkIO $ handleConnection st conn peer
+  let connState = ConnState { _csRecvBuffer = B.empty }
+  forkIO $ finally (handle (onConnException conn peer) (evalStateT (handleConnection st conn peer) connState)) (Sock.close conn)
   return ()
 
-handleConnection :: ServiceState -> Sock.Socket -> Sock.SockAddr -> IO ()
-handleConnection st conn_ peer = runManaged do
-  conn <- managed (\f -> f conn_)
-  liftIO $ writeChan (stMessageBus st) (MsgNewClient peer)
+onConnException :: Sock.Socket -> Sock.SockAddr -> SomeException -> IO ()
+onConnException conn peer exc = do
+  putStrLn $ "Exception when handling connection with " ++ show peer ++ ": " ++ show exc
+
+
+handleConnection :: (MonadIO m, MonadState ConnState m) => ServiceState -> Sock.Socket -> Sock.SockAddr -> m ()
+handleConnection st conn peer = do
+  liftIO $ atomically $ writeTQueue (stMessageBus st) (MsgNewClient peer)
+
+  -- Auth
+  liftIO $ SockBS.sendAll conn "Username: "
+  username <- readBytesUntil conn (c2w '\n')
+  liftIO $ SockBS.sendAll conn "Password: "
+  password <- readBytesUntil conn (c2w '\n')
+  return ()
+
+readBytesUntil :: (MonadIO m, MonadState ConnState m) => Sock.Socket -> Word8 -> m B.ByteString
+readBytesUntil conn terminator = do
+  initBuf <- get
+  buffers <- search (view csRecvBuffer initBuf) (SockBS.recv conn 4096)
+  return $ B.intercalate B.empty buffers
+  where
+    search :: (MonadIO m, MonadState ConnState m) => B.ByteString -> IO B.ByteString -> m [B.ByteString]
+    search x next = case B.findIndex (== terminator) x of
+      Just i_ -> do
+        -- Save the remaining bytes into the buffer
+        -- Include the terminating byte
+        let i = i_ + 1
+        when (i < B.length x) do
+          get >>= put . set csRecvBuffer (B.drop i x)
+        return [B.take i x]
+      Nothing -> do
+        nextBuf <- liftIO next
+        after <- search nextBuf next
+        return $ x : after

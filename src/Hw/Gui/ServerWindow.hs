@@ -5,6 +5,7 @@ import qualified DearImGui as G
 import Control.Lens
 import Data.IORef
 import Hw.Server
+import Control.Concurrent.STM
 
 data St = St {
   _stCounter :: Int,
@@ -33,6 +34,12 @@ render = do
   case view stListener current of
     Just listener -> do
       G.text $ "Listening on " ++ show (apiListenAddr listener)
+
+      bufferedMsg <- liftIO $ atomically $ tryReadTQueue $ apiMessageBus listener
+      case bufferedMsg of
+        Just x -> do
+          liftIO $ print x
+        Nothing -> return ()
     Nothing -> do
       G.inputText "Listen address" (view stListenAddrInput current) 256
       G.inputText "Service/port" (view stListenServiceInput current) 32

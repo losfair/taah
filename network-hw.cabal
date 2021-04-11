@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9277a9a3932ca444eec76348d5137d5441ca3e9e143c846b4cbddcc6120c5008
+-- hash: bb24544255bb3cc6e94a788bfb2dea1ee89422c9945dad909740d67236ac10c0
 
 name:           network-hw
 version:        0.1.0.0
@@ -40,6 +40,7 @@ library
       GLFW-b
     , StateVar
     , base >=4.7 && <5
+    , bytestring
     , dear-imgui
     , gl
     , lens
@@ -47,6 +48,8 @@ library
     , mtl
     , network
     , sqlite-simple
+    , stm
+    , text
   default-language: Haskell2010
 
 executable network-hw-server-exe
@@ -61,6 +64,7 @@ executable network-hw-server-exe
       GLFW-b
     , StateVar
     , base >=4.7 && <5
+    , bytestring
     , dear-imgui
     , gl
     , lens
@@ -69,6 +73,8 @@ executable network-hw-server-exe
     , network
     , network-hw
     , sqlite-simple
+    , stm
+    , text
   default-language: Haskell2010
 
 test-suite network-hw-test
@@ -84,6 +90,7 @@ test-suite network-hw-test
       GLFW-b
     , StateVar
     , base >=4.7 && <5
+    , bytestring
     , dear-imgui
     , gl
     , lens
@@ -92,4 +99,6 @@ test-suite network-hw-test
     , network
     , network-hw
     , sqlite-simple
+    , stm
+    , text
   default-language: Haskell2010

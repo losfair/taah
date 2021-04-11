@@ -30,6 +30,9 @@ dependencies:
 - mtl
 - lens
 - StateVar
+- stm
+- text
+- bytestring
 
 default-extensions:
 - OverloadedStrings

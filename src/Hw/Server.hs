@@ -153,7 +153,6 @@ readBytesUntil conn terminateCondition = do
         return [B.take i x]
       Nothing -> do
         nextBuf <- liftIO next
-        liftIO $ print (B.length nextBuf)
         when (B.length nextBuf == 0) do
           liftIO $ throwIO $ ServerException "readBytesUntil: EOF"
         after <- search nextBuf next

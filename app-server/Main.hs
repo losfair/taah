@@ -28,6 +28,7 @@ main = do
     case mwin of
       Just win -> do
         liftIO $ do
+          GLFW.maximizeWindow win
           GLFW.makeContextCurrent (Just win)
           GLFW.swapInterval 1
 

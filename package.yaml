@@ -41,6 +41,7 @@ default-extensions:
 - FlexibleContexts
 - TemplateHaskell
 - ScopedTypeVariables
+- BangPatterns
 
 library:
   source-dirs: src

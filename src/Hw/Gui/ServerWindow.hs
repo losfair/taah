@@ -9,6 +9,8 @@ import Control.Concurrent.STM
 import qualified Data.Text as T
 import qualified Network.Socket as Sock
 import Data.ByteString.Internal (w2c)
+import Hw.TimeIt (timeItNamed)
+import Data.Maybe
 
 data St = St {
   _stCounter :: Int,
@@ -44,11 +46,13 @@ render = do
   case view stListener current of
     Just listener -> do
       G.text $ "Listening on " ++ show (apiListenAddr listener)
+      G.spacing
       G.separator
+      G.spacing
 
       -- Logs
-      bufferedMsg <- liftIO $ atomically $ tryReadTQueue $ apiMessageBus listener
-      renderLogs bufferedMsg
+      bufferedMsgs <- liftIO $ atomically $ flushTQueue $ apiMessageBus listener
+      renderLogs bufferedMsgs
     Nothing -> do
       G.inputText "Listen address" (view stListenAddrInput current) 256
       G.inputText "Service/port" (view stListenServiceInput current) 32
@@ -68,21 +72,20 @@ render = do
   put $ over stCounter (+ 1) current
   pure ()
 
-renderLogs :: (MonadIO m, MonadState St m) => Maybe ServerMessage -> m ()
-renderLogs msg = do
+renderLogs :: (MonadIO m, MonadState St m) => [ServerMessage] -> m ()
+renderLogs msgs = do
+  let appendLogs = reverse $ map mkEntry msgs
+  unless (null appendLogs) $ timeItNamed "renderLogs" do
+    current <- get
+    let prevLogs = take 100 $ view stLogs current
+    let newLogs = foldLogs $ appendLogs ++ prevLogs
+    put $ set stLogs newLogs current
+
   current <- get
-  let prevLogs = take 100 $ view stLogs current
-
-  -- should we rewrite the last log entry?
-  let newLogs = case (prevLogs, msg) of
-                  (x:xs, Just (MsgChar addr byte)) | leMsgCharAddr x == Just addr ->
-                    x { leText = leText x ++ [w2c byte] } : xs
-                  (xs, Just next) -> mkEntry next : xs
-                  (xs, Nothing) -> xs
-  put $ set stLogs newLogs current
-
   G.beginChild "ConsoleView"
-  liftIO $ mapM_ renderItem (reverse newLogs)
+  liftIO $ mapM_ renderItem (reverse $ view stLogs current)
+  unless (null msgs) do
+    liftIO $ G.setScrollHereY 1.0
   G.endChild
 
   return ()
@@ -92,11 +95,21 @@ renderLogs msg = do
     mkEntry msg = case msg of
       MsgChar peer ch ->
         LogEntry {
-          leText = "[" ++ show peer ++ "] " ++ [w2c ch],
+          leText = [w2c ch],
           leMsgCharAddr = Just peer
         }
       _ -> LogEntry { leText = show msg, leMsgCharAddr = Nothing }
 
     renderItem :: LogEntry -> IO ()
     renderItem entry = do
-      G.textWrapped $ leText entry
+      let text = case leMsgCharAddr entry of
+                  Just x -> "[" ++ show x ++ "] " ++ reverse (leText entry)
+                  Nothing -> leText entry
+      G.textWrapped text
+
+    foldLogs :: [LogEntry] -> [LogEntry]
+    foldLogs !logs = case logs of
+      a:b:xs | isJust (leMsgCharAddr a) && leMsgCharAddr a == leMsgCharAddr b && head (leText b) /= '\n' ->
+        foldLogs $ b { leText = leText a ++ leText b } : xs 
+      a:xs -> a : foldLogs xs
+      [] -> []

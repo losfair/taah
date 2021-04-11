@@ -1,7 +1,8 @@
 module Hw.Server (
   generateServer,
   ServerConfig(ServerConfig), cfgListenIP, cfgListenService, cfgAccountDbPath,
-  ServerApi, apiMessageBus, apiListenAddr
+  ServerApi, apiMessageBus, apiListenAddr,
+  ServerMessage(MsgNewClient, MsgAuthFailed, MsgClientAuthenticated, MsgChar)
 ) where
 
 import Control.Concurrent.STM.TQueue
@@ -21,6 +22,10 @@ import Control.Lens
 import Data.ByteString.Internal (c2w)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+
+newtype ServerException = ServerException String
+  deriving (Show)
+instance Exception ServerException
 
 data ServerConfig = ServerConfig {
   cfgListenIP :: String,
@@ -43,6 +48,7 @@ data ServerMessage =
   MsgNewClient Sock.SockAddr 
   | MsgAuthFailed Sock.SockAddr
   | MsgClientAuthenticated Sock.SockAddr T.Text
+  | MsgClientClosed Sock.SockAddr
   | MsgChar Sock.SockAddr Word8
   deriving (Show)
 
@@ -83,7 +89,9 @@ runServer :: ServiceState -> IO ()
 runServer st = forever do
   (conn, peer) <- onException (Sock.accept $ view stListener st) (Sock.close $ view stListener st)
   let connState = ConnState { _csRecvBuffer = B.empty }
-  forkIO $ finally (handle (onConnException conn peer) (evalStateT (handleConnection st conn peer) connState)) (Sock.close conn)
+  forkIO $ finally
+    (handle (onConnException conn peer) (evalStateT (handleConnection st conn peer) connState))
+    (Sock.close conn >> writeMbus st (MsgClientClosed peer))
   return ()
 
 onConnException :: Sock.Socket -> Sock.SockAddr -> SomeException -> IO ()
@@ -145,5 +153,8 @@ readBytesUntil conn terminateCondition = do
         return [B.take i x]
       Nothing -> do
         nextBuf <- liftIO next
+        liftIO $ print (B.length nextBuf)
+        when (B.length nextBuf == 0) do
+          liftIO $ throwIO $ ServerException "readBytesUntil: EOF"
         after <- search nextBuf next
         return $ x : after

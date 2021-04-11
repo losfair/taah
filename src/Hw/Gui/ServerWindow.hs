@@ -6,12 +6,21 @@ import Control.Lens
 import Data.IORef
 import Hw.Server
 import Control.Concurrent.STM
+import qualified Data.Text as T
+import qualified Network.Socket as Sock
+import Data.ByteString.Internal (w2c)
 
 data St = St {
   _stCounter :: Int,
   _stListener :: Maybe ServerApi,
   _stListenAddrInput :: IORef String,
-  _stListenServiceInput :: IORef String
+  _stListenServiceInput :: IORef String,
+  _stLogs :: ![LogEntry]
+}
+
+data LogEntry = LogEntry {
+  leText :: !String,
+  leMsgCharAddr :: !(Maybe Sock.SockAddr)
 }
 
 $(makeLenses ''St)
@@ -24,7 +33,8 @@ mkSt = do
     _stCounter = 0,
     _stListener = Nothing,
     _stListenAddrInput = listenAddrInput,
-    _stListenServiceInput = listenServiceInput
+    _stListenServiceInput = listenServiceInput,
+    _stLogs = []
   }
 
 render :: (MonadIO m, MonadState St m) => m ()
@@ -34,12 +44,11 @@ render = do
   case view stListener current of
     Just listener -> do
       G.text $ "Listening on " ++ show (apiListenAddr listener)
+      G.separator
 
+      -- Logs
       bufferedMsg <- liftIO $ atomically $ tryReadTQueue $ apiMessageBus listener
-      case bufferedMsg of
-        Just x -> do
-          liftIO $ print x
-        Nothing -> return ()
+      renderLogs bufferedMsg
     Nothing -> do
       G.inputText "Listen address" (view stListenAddrInput current) 256
       G.inputText "Service/port" (view stListenServiceInput current) 32
@@ -58,3 +67,36 @@ render = do
   current <- get
   put $ over stCounter (+ 1) current
   pure ()
+
+renderLogs :: (MonadIO m, MonadState St m) => Maybe ServerMessage -> m ()
+renderLogs msg = do
+  current <- get
+  let prevLogs = take 100 $ view stLogs current
+
+  -- should we rewrite the last log entry?
+  let newLogs = case (prevLogs, msg) of
+                  (x:xs, Just (MsgChar addr byte)) | leMsgCharAddr x == Just addr ->
+                    x { leText = leText x ++ [w2c byte] } : xs
+                  (xs, Just next) -> mkEntry next : xs
+                  (xs, Nothing) -> xs
+  put $ set stLogs newLogs current
+
+  G.beginChild "ConsoleView"
+  liftIO $ mapM_ renderItem (reverse newLogs)
+  G.endChild
+
+  return ()
+
+  where
+    mkEntry :: ServerMessage -> LogEntry
+    mkEntry msg = case msg of
+      MsgChar peer ch ->
+        LogEntry {
+          leText = "[" ++ show peer ++ "] " ++ [w2c ch],
+          leMsgCharAddr = Just peer
+        }
+      _ -> LogEntry { leText = show msg, leMsgCharAddr = Nothing }
+
+    renderItem :: LogEntry -> IO ()
+    renderItem entry = do
+      G.textWrapped $ leText entry

@@ -90,10 +90,12 @@ onConnException :: Sock.Socket -> Sock.SockAddr -> SomeException -> IO ()
 onConnException conn peer exc = do
   putStrLn $ "Exception when handling connection with " ++ show peer ++ ": " ++ show exc
 
+writeMbus :: MonadIO m => ServiceState -> ServerMessage -> m ()
+writeMbus st msg = liftIO $ atomically $ writeTQueue (view stMessageBus st) msg
 
 handleConnection :: (MonadIO m, MonadState ConnState m) => ServiceState -> Sock.Socket -> Sock.SockAddr -> m ()
 handleConnection st conn peer = do
-  liftIO $ atomically $ writeTQueue (view stMessageBus st) (MsgNewClient peer)
+  writeMbus st (MsgNewClient peer)
 
   -- Auth
   liftIO $ SockBS.sendAll conn "Username: "
@@ -114,10 +116,10 @@ handleConnection st conn peer = do
             (DB.Only t):_ -> t == password
             [] -> False
   if ok then do
-    liftIO $ atomically $ writeTQueue (view stMessageBus st) (MsgClientAuthenticated peer UserInfo {})
+    writeMbus st (MsgClientAuthenticated peer UserInfo {})
     enterSession st conn peer
   else do
-    liftIO $ atomically $ writeTQueue (view stMessageBus st) (MsgAuthFailed peer)
+    writeMbus st (MsgAuthFailed peer)
     liftIO $ SockBS.sendAll conn "Authentication failed.\r\n"
 
 enterSession :: (MonadIO m, MonadState ConnState m) => ServiceState -> Sock.Socket -> Sock.SockAddr -> m ()

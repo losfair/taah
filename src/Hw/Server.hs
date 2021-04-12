@@ -203,7 +203,7 @@ readBytesUntil st conn peer terminateCondition = do
     transformZero 0 = c2w '\n'
     transformZero x = x
 
-    filterControl :: (MonadIO m, MonadState ConnState m) => Word8 -> m Bool
+    filterControl :: (MonadState ConnState m) => Word8 -> m Bool
     filterControl byte = do
       cs <- get
       case view csTelnetControlState cs of

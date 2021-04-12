@@ -6,6 +6,8 @@ jobs:
     runs-on: windows-latest # or macOS-latest, or windows-latest
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: recursive
       - uses: haskell/actions/setup@v1
         with:
           ghc-version: '8.8.3'

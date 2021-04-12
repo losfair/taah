@@ -53,8 +53,17 @@ data ServerMessage =
   deriving (Show)
 
 data ConnState = ConnState {
-  _csRecvBuffer :: B.ByteString
+  _csRecvBuffer :: B.ByteString,
+  _csEchoMap :: Word8 -> Word8,
+  _csEchoFilter :: Word8 -> Bool,
+  _csTelnetControlState :: TelnetControlState
 }
+
+data TelnetControlState =
+  TcsIdle
+  | TcsGotIac
+  | TcsGotOption
+  deriving (Show)
 
 $(makeLenses ''ServiceState)
 $(makeLenses ''ConnState)
@@ -88,7 +97,12 @@ generateServer config = do
 runServer :: ServiceState -> IO ()
 runServer st = forever do
   (conn, peer) <- onException (Sock.accept $ view stListener st) (Sock.close $ view stListener st)
-  let connState = ConnState { _csRecvBuffer = B.empty }
+  let connState = ConnState {
+    _csRecvBuffer = B.empty,
+    _csEchoMap = id,
+    _csEchoFilter = const True,
+    _csTelnetControlState = TcsIdle
+  }
   forkIO $ finally
     (handle (onConnException conn peer) (evalStateT (handleConnection st conn peer) connState))
     (Sock.close conn >> writeMbus st (MsgClientClosed peer))
@@ -105,11 +119,26 @@ handleConnection :: (MonadIO m, MonadState ConnState m) => ServiceState -> Sock.
 handleConnection st conn peer = do
   writeMbus st (MsgNewClient peer)
 
+  -- Control bytes: IAC WILL ECHO IAC WILL SUPPRESS_GO_AHEAD
+  liftIO $ SockBS.sendAll conn $ B.pack [255, 251, 1, 255, 251, 3]
+
   -- Auth
   liftIO $ SockBS.sendAll conn "Username: "
   username_ <- readBytesUntil conn (== c2w '\n')
+
+  -- Disable echo for password
+  prevCsEchoMap <- gets $ view csEchoMap
+  prevCsEchoFilter <- gets $ view csEchoFilter
+
+  get >>= put . set csEchoMap (const $ c2w '*')
+  get >>= put . set csEchoFilter (\x -> x /= c2w '\n' && x /= c2w '\r')
   liftIO $ SockBS.sendAll conn "Password: "
   password_ <- readBytesUntil conn (== c2w '\n')
+
+  modify $ set csEchoMap prevCsEchoMap
+  modify $ set csEchoFilter prevCsEchoFilter
+
+  liftIO $ SockBS.sendAll conn "\r\n"
 
   let username = T.strip $ decodeUtf8 username_
   let password = T.dropWhileEnd (\x -> x == '\r' || x == '\n') $ decodeUtf8 password_
@@ -139,12 +168,12 @@ enterSession st conn peer username = do
 
 readBytesUntil :: (MonadIO m, MonadState ConnState m) => Sock.Socket -> (Word8 -> Bool) -> m B.ByteString
 readBytesUntil conn terminateCondition = do
-  initBuf <- get
-  buffers <- search (view csRecvBuffer initBuf) (SockBS.recv conn 4096)
+  cs <- get
+  buffers <- search (view csRecvBuffer cs) 
   return $ B.intercalate B.empty buffers
   where
-    search :: (MonadIO m, MonadState ConnState m) => B.ByteString -> IO B.ByteString -> m [B.ByteString]
-    search x next = case B.findIndex terminateCondition x of
+    search :: (MonadIO m, MonadState ConnState m) => B.ByteString -> m [B.ByteString]
+    search x = case B.findIndex terminateCondition x of
       Just i_ -> do
         -- Save the remaining bytes into the buffer
         -- Include the terminating byte
@@ -152,8 +181,37 @@ readBytesUntil conn terminateCondition = do
         get >>= put . set csRecvBuffer (B.drop i x)
         return [B.take i x]
       Nothing -> do
-        nextBuf <- liftIO next
-        when (B.length nextBuf == 0) do
+        nextBuf_ <- liftIO $ SockBS.recv conn 4096
+        -- Check before filtering
+        when (B.length nextBuf_ == 0) do
           liftIO $ throwIO $ ServerException "readBytesUntil: EOF"
-        after <- search nextBuf next
+
+        nextBuf <- B.pack . map transformZero <$> filterM filterControl (B.unpack nextBuf_)
+        cs <- get
+        liftIO $ SockBS.sendAll conn $ B.map (view csEchoMap cs) $ B.filter (view csEchoFilter cs) nextBuf
+        after <- search nextBuf
         return $ x : after
+
+    transformZero :: Word8 -> Word8
+    transformZero 0 = c2w '\n'
+    transformZero x = x
+
+    filterControl :: (MonadIO m, MonadState ConnState m) => Word8 -> m Bool
+    filterControl byte = do
+      cs <- get
+      case view csTelnetControlState cs of
+        TcsIdle ->
+          if byte == 255 then do
+            put $ set csTelnetControlState TcsGotIac cs
+            return False
+          else
+            return True
+        TcsGotIac -> do
+          if byte >= 251 && byte <= 254 then
+            put $ set csTelnetControlState TcsGotOption cs
+          else
+            put $ set csTelnetControlState TcsIdle cs
+          return False
+        TcsGotOption -> do
+          put $ set csTelnetControlState TcsIdle cs
+          return False

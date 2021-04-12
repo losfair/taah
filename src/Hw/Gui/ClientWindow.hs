@@ -2,10 +2,12 @@ module Hw.Gui.ClientWindow (St, mkSt, render) where
 
 import Control.Monad.State
 import qualified DearImGui as G
+import qualified DearImGui.Raw as GR
 import Control.Lens
 import Data.IORef
 import Control.Concurrent.STM
 import qualified Data.Text as T
+import qualified Data.Text.Foreign as TF
 import qualified Network.Socket as Sock
 import Data.ByteString.Internal (w2c, c2w)
 import Hw.TimeIt (timeItNamed)
@@ -20,7 +22,7 @@ data St = St {
   _stConnectServiceInput :: IORef String,
   _stXmitBoxInput :: IORef String,
   _stClient :: Maybe ClientApi,
-  _stLogs :: ![T.Text],
+  _stLogCache :: T.Text,
   _stXmitLastLen :: Int
 }
 
@@ -36,7 +38,7 @@ mkSt = do
     _stConnectServiceInput = connectServiceInput,
     _stXmitBoxInput = xmitBoxInput,
     _stClient = Nothing,
-    _stLogs = [],
+    _stLogCache = T.empty,
     _stXmitLastLen = 0
   }
 
@@ -88,7 +90,7 @@ render = do
         liftIO $ writeIORef (view stXmitBoxInput current) ""
         put $
           set stXmitLastLen 0 $
-          set stLogs [] $
+          set stLogCache T.empty $
           set stClient (Just client)
           current
         return ()
@@ -97,16 +99,22 @@ render = do
 
 renderLogs :: (MonadIO m, MonadState St m) => [T.Text] -> m ()
 renderLogs msgs = do
-  let appendLogs = reverse msgs
-  unless (null appendLogs) $ timeItNamed "client_renderLogs" do
+  unless (null msgs) $ timeItNamed "client_renderLogs" do
     current <- get
-    let prevLogs = take 100 $ view stLogs current
-    let newLogs = appendLogs ++ prevLogs
-    put $ set stLogs newLogs current
+    let cache = genCache (view stLogCache current:msgs)
+    put $
+      set stLogCache cache
+      current
+
+  G.spacing
+  G.separator
+  G.spacing
 
   current <- get
   G.beginChild "ConsoleView"
-  liftIO $ mapM_ renderItem (reverse $ view stLogs current)
+  let logCache = view stLogCache current
+  unless (T.null logCache) do
+    liftIO $ renderItem $ view stLogCache current
   unless (null msgs) do
     liftIO $ G.setScrollHereY 1.0
   G.endChild
@@ -114,5 +122,8 @@ renderLogs msgs = do
   return ()
 
   where
+    genCache :: [T.Text] -> T.Text
+    genCache = T.takeEnd 65536 . T.concat
+
     renderItem :: T.Text -> IO ()
-    renderItem text = G.textWrapped $ T.unpack text
+    renderItem text = TF.withCStringLen text GR.textUnformatted

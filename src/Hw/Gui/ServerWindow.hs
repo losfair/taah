@@ -2,11 +2,13 @@ module Hw.Gui.ServerWindow (St, mkSt, render) where
 
 import Control.Monad.State
 import qualified DearImGui as G
+import qualified DearImGui.Raw as GR
 import Control.Lens
 import Data.IORef
 import Hw.Server
 import Control.Concurrent.STM
 import qualified Data.Text as T
+import qualified Data.Text.Foreign as TF
 import qualified Network.Socket as Sock
 import Data.ByteString.Internal (w2c)
 import Hw.TimeIt (timeItNamed)
@@ -16,7 +18,8 @@ data St = St {
   _stListener :: Maybe ServerApi,
   _stListenAddrInput :: IORef String,
   _stListenServiceInput :: IORef String,
-  _stLogs :: ![LogEntry]
+  _stLogs :: ![LogEntry],
+  _stLogCache :: T.Text
 }
 
 data LogEntry = LogEntry {
@@ -34,7 +37,8 @@ mkSt = do
     _stListener = Nothing,
     _stListenAddrInput = listenAddrInput,
     _stListenServiceInput = listenServiceInput,
-    _stLogs = []
+    _stLogs = [],
+    _stLogCache = T.empty
   }
 
 render :: (MonadIO m, MonadState St m) => m ()
@@ -70,15 +74,18 @@ render = do
 renderLogs :: (MonadIO m, MonadState St m) => [ServerMessage] -> m ()
 renderLogs msgs = do
   let appendLogs = reverse $ map mkEntry msgs
-  unless (null appendLogs) $ timeItNamed "renderLogs" do
+  unless (null appendLogs) $ timeItNamed "server_renderLogs" do
     current <- get
     let prevLogs = take 100 $ view stLogs current
     let newLogs = foldLogs $ appendLogs ++ prevLogs
-    put $ set stLogs newLogs current
+    get >>= put . set stLogs newLogs
+    get >>= put . set stLogCache (T.intercalate "\n" $ map renderItem $ reverse newLogs)
 
   current <- get
   G.beginChild "ConsoleView"
-  liftIO $ mapM_ renderItem (reverse $ view stLogs current)
+  let logCache = view stLogCache current
+  unless (T.null logCache) do
+    liftIO $ TF.withCStringLen logCache GR.textUnformatted
   unless (null msgs) do
     liftIO $ G.setScrollHereY 1.0
   G.endChild
@@ -95,12 +102,10 @@ renderLogs msgs = do
         }
       _ -> LogEntry { leText = show msg, leMsgCharAddr = Nothing }
 
-    renderItem :: LogEntry -> IO ()
-    renderItem entry = do
-      let text = case leMsgCharAddr entry of
-                  Just x -> "[" ++ show x ++ "] " ++ reverse (leText entry)
-                  Nothing -> leText entry
-      G.textWrapped text
+    renderItem :: LogEntry -> T.Text
+    renderItem entry = case leMsgCharAddr entry of
+      Just x -> T.pack $ "[" ++ show x ++ "] " ++ reverse (leText entry)
+      Nothing -> T.pack $ leText entry
 
     foldLogs :: [LogEntry] -> [LogEntry]
     foldLogs !logs = case logs of

@@ -13,7 +13,6 @@ import Hw.TimeIt (timeItNamed)
 import Data.Maybe
 
 data St = St {
-  _stCounter :: Int,
   _stListener :: Maybe ServerApi,
   _stListenAddrInput :: IORef String,
   _stListenServiceInput :: IORef String,
@@ -32,7 +31,6 @@ mkSt = do
   listenAddrInput <- liftIO $ newIORef "127.0.0.1"
   listenServiceInput <- liftIO $ newIORef "2233"
   return St {
-    _stCounter = 0,
     _stListener = Nothing,
     _stListenAddrInput = listenAddrInput,
     _stListenServiceInput = listenServiceInput,
@@ -42,7 +40,6 @@ mkSt = do
 render :: (MonadIO m, MonadState St m) => m ()
 render = do
   current <- get
-  G.text $ "Frame count: " ++ show (view stCounter current)
   case view stListener current of
     Just listener -> do
       G.text $ "Listening on " ++ show (apiListenAddr listener)
@@ -68,8 +65,6 @@ render = do
         listener <- liftIO $ generateServer config
         put $ set stListener (Just listener) current
         return ()
-  current <- get
-  put $ over stCounter (+ 1) current
   pure ()
 
 renderLogs :: (MonadIO m, MonadState St m) => [ServerMessage] -> m ()

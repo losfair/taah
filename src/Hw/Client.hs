@@ -1,5 +1,5 @@
 module Hw.Client (
-  ClientConfig(cfgConnectIP, cfgConnectService),
+  ClientConfig(ClientConfig, cfgConnectIP, cfgConnectService),
   ClientApi,
   generateClient,
   closeClient,
@@ -17,6 +17,7 @@ import qualified Network.Socket.ByteString as SockBS
 import Hw.Protocol
 import Control.Monad.State
 import Control.Lens
+import Data.List (foldl')
 
 newtype ClientException = ClientException String
   deriving (Show)
@@ -34,7 +35,8 @@ data ClientApi = ClientApi {
   apiDataSend :: TQueue B.ByteString,
   apiDataRecv :: TQueue RecvItem,
   apiKillHandle :: ThreadId,
-  apiConnectAddr :: Sock.SockAddr
+  apiConnectAddr :: Sock.SockAddr,
+  apiSocket :: Sock.Socket
 }
 
 data ClientService = ClientService {
@@ -69,7 +71,8 @@ generateClient cfg = do
     apiDataSend = dataSend,
     apiDataRecv = dataRecv,
     apiKillHandle = serviceTid,
-    apiConnectAddr = Sock.addrAddress addr
+    apiConnectAddr = Sock.addrAddress addr,
+    apiSocket = sock
   }
   return api
   where
@@ -80,14 +83,24 @@ generateClient cfg = do
 closeClient :: ClientApi -> IO ()
 closeClient api = do
   killThread $ apiKillHandle api
+  Sock.close $ apiSocket api
 
-tryReadData :: ClientApi -> IO (Maybe B.ByteString)
+tryReadData :: ClientApi -> IO [B.ByteString]
 tryReadData api = do
-  msg <- atomically $ tryReadTQueue $ apiDataRecv api
-  case msg of
-    Just (RecvData x) -> return $ Just x
-    Just (RecvException e) -> throwIO $ ClientException e
-    Nothing -> return Nothing
+  msgs <- atomically $ flushTQueue $ apiDataRecv api
+  case msgs of
+    RecvException e:_ -> throwIO $ ClientException e
+    _ -> return ()
+
+  let (d, e) = span isData msgs
+  case e of
+    (RecvException e):_ -> atomically $ unGetTQueue (apiDataRecv api) (RecvException e)
+    _ -> return ()
+  return $ map unwrapData d
+  where
+    isData (RecvData _) = True
+    isData (RecvException _) = False
+    unwrapData (RecvData x) = x
 
 writeData :: ClientApi -> B.ByteString -> IO ()
 writeData api buf = atomically $ writeTQueue (apiDataSend api) buf

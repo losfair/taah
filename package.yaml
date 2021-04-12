@@ -33,6 +33,7 @@ dependencies:
 - stm
 - text
 - bytestring
+- process
 
 default-extensions:
 - OverloadedStrings

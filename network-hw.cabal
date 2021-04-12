@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3574993ac31706898d18060d881de22bd3fe5cdd115943b2faf056647be24113
+-- hash: 9dba2edce0f6b75bb8df6dc3dddf06c7c4b6493bbcfc15df8a41888b05c19b69
 
 name:           network-hw
 version:        0.1.0.0
@@ -27,6 +27,9 @@ source-repository head
 
 library
   exposed-modules:
+      Hw.Client
+      Hw.Concurrent
+      Hw.ExecControl
       Hw.Gui.ClientWindow
       Hw.Gui.ServerWindow
       Hw.Server
@@ -49,6 +52,7 @@ library
     , managed
     , mtl
     , network
+    , process
     , sqlite-simple
     , stm
     , text
@@ -74,6 +78,7 @@ executable network-hw-server-exe
     , mtl
     , network
     , network-hw
+    , process
     , sqlite-simple
     , stm
     , text
@@ -100,6 +105,7 @@ test-suite network-hw-test
     , mtl
     , network
     , network-hw
+    , process
     , sqlite-simple
     , stm
     , text

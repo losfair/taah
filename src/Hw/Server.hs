@@ -22,6 +22,7 @@ import Control.Lens
 import Data.ByteString.Internal (c2w)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Hw.ExecControl (runCommand)
 
 newtype ServerException = ServerException String
   deriving (Show)
@@ -124,7 +125,7 @@ handleConnection st conn peer = do
 
   -- Auth
   liftIO $ SockBS.sendAll conn "Username: "
-  username_ <- readBytesUntil conn (== c2w '\n')
+  username_ <- readBytesUntil st conn peer (== c2w '\n')
 
   -- Disable echo for password
   prevCsEchoMap <- gets $ view csEchoMap
@@ -133,7 +134,7 @@ handleConnection st conn peer = do
   get >>= put . set csEchoMap (const $ c2w '*')
   get >>= put . set csEchoFilter (\x -> x /= c2w '\n' && x /= c2w '\r')
   liftIO $ SockBS.sendAll conn "Password: "
-  password_ <- readBytesUntil conn (== c2w '\n')
+  password_ <- readBytesUntil st conn peer (== c2w '\n')
 
   modify $ set csEchoMap prevCsEchoMap
   modify $ set csEchoFilter prevCsEchoFilter
@@ -163,11 +164,15 @@ enterSession :: (MonadIO m, MonadState ConnState m) => ServiceState -> Sock.Sock
 enterSession st conn peer username = do
   liftIO $ SockBS.sendAll conn $ encodeUtf8 $ T.pack ("You are now authenticated as " ++ T.unpack username ++ ".\r\n")
   forever do
-    b <- readBytesUntil conn (const True)
-    writeMbus st (MsgChar peer $ B.head b)
+    liftIO $ SockBS.sendAll conn "> "
+    cmd <- decodeUtf8 <$> readBytesUntil st conn peer (== c2w '\n')
+    runCommand cmd
+      (SockBS.sendAll conn)
+      (B.head <$> readBytesUntil st conn peer (const True))
+    return ()
 
-readBytesUntil :: (MonadIO m, MonadState ConnState m) => Sock.Socket -> (Word8 -> Bool) -> m B.ByteString
-readBytesUntil conn terminateCondition = do
+readBytesUntil :: (MonadIO m, MonadState ConnState m) => ServiceState -> Sock.Socket -> Sock.SockAddr -> (Word8 -> Bool) -> m B.ByteString
+readBytesUntil st conn peer terminateCondition = do
   cs <- get
   buffers <- search (view csRecvBuffer cs) 
   return $ B.intercalate B.empty buffers
@@ -188,7 +193,9 @@ readBytesUntil conn terminateCondition = do
 
         nextBuf <- B.pack . map transformZero <$> filterM filterControl (B.unpack nextBuf_)
         cs <- get
-        liftIO $ SockBS.sendAll conn $ B.map (view csEchoMap cs) $ B.filter (view csEchoFilter cs) nextBuf
+        let echoData = B.map (view csEchoMap cs) $ B.filter (view csEchoFilter cs) nextBuf
+        mapM_ (writeMbus st . MsgChar peer) $ B.unpack echoData
+        liftIO $ SockBS.sendAll conn echoData
         after <- search nextBuf
         return $ x : after
 

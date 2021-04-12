@@ -7,7 +7,7 @@ import Control.Monad.State (MonadIO, liftIO, MonadState (get, put), forever, Sta
 import Data.Word (Word8)
 import Data.Char
 import qualified System.Process as P
-import System.IO (Handle, BufferMode (NoBuffering, LineBuffering), hSetBuffering)
+import System.IO (Handle, BufferMode (NoBuffering, LineBuffering), hSetBuffering, hClose)
 import Control.Concurrent
 import Data.IORef
 import Hw.Concurrent
@@ -40,9 +40,11 @@ runCommand cmd_ streamBack nextByte = do
   liftIO $ watchSignal signal $ finally (evalStateT (feedInputToProcess ipc nextByte stStore) st) do
     P.terminateProcess procHandle
 
-  -- State writeback
+  -- State writeback & cleanup
   liftIO (readIORef stStore) >>= put
-
+  liftIO do
+    hClose $ ipcStdin ipc
+    hClose $ ipcStdout ipc
   return ()
   
   where

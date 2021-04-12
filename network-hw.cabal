@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3e407ef349d8cdc7a9ce9e46e57f11b746610ff6058b681866f942bf68dcccd3
+-- hash: 3574993ac31706898d18060d881de22bd3fe5cdd115943b2faf056647be24113
 
 name:           network-hw
 version:        0.1.0.0
@@ -27,6 +27,7 @@ source-repository head
 
 library
   exposed-modules:
+      Hw.Gui.ClientWindow
       Hw.Gui.ServerWindow
       Hw.Server
       Hw.TimeIt

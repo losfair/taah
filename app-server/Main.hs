@@ -12,9 +12,8 @@ import qualified Graphics.UI.GLFW as GLFW
 import Control.Monad.State ( StateT(runStateT), MonadState(get) )
 import Data.IORef
 import qualified Hw.Gui.ServerWindow as ServerWindow
+import qualified Hw.Gui.ClientWindow as ClientWindow
 import Data.Maybe
-
-data ServerWindow = ServerWindow { }
 
 main :: IO ()
 main = do
@@ -28,6 +27,7 @@ main = do
     case mwin of
       Just win -> do
         liftIO $ do
+          GLFW.maximizeWindow win
           GLFW.makeContextCurrent (Just win)
           GLFW.swapInterval 1
 
@@ -48,16 +48,22 @@ main = do
 
 data LoopContext = LoopContext {
   lcServerWS :: IORef ServerWindow.St,
-  lcPendingException :: IORef (Maybe String)
+  lcClientWS :: IORef ClientWindow.St,
+  lcServerPendingException :: IORef (Maybe String),
+  lcClientPendingException :: IORef (Maybe String)
 }
 
 runMainLoop :: Window -> IO ()
 runMainLoop win = do
   serverWS <- ServerWindow.mkSt >>= newIORef
-  pendingException <- newIORef Nothing
+  serverPendingException <- newIORef Nothing
+  clientWS <- ClientWindow.mkSt >>= newIORef
+  clientPendingException <- newIORef Nothing
   let ctx = LoopContext {
     lcServerWS = serverWS,
-    lcPendingException = pendingException
+    lcServerPendingException = serverPendingException,
+    lcClientWS = clientWS,
+    lcClientPendingException = clientPendingException
   }
   mainLoop win ctx
 
@@ -75,20 +81,17 @@ mainLoop win ctx = do
 
     -- Build the GUI
     bracket_ (G.begin "Server") G.end $
-      handle (catchWindowException $ lcPendingException ctx) do
-        renderWindowException (lcPendingException ctx)
+      handle (catchWindowException "server" $ lcServerPendingException ctx) do
+        renderWindowException "server" (lcServerPendingException ctx)
         stIn <- readIORef (lcServerWS ctx)
         (_, out) <- runStateT ServerWindow.render stIn
         writeIORef (lcServerWS ctx) $! out
-
-    bracket_ (G.begin "Hello, ImGui!") G.end do
-      -- Add a text widget
-      G.text "Hello, ImGui!"
-
-      -- Add a button widget, and call 'putStrLn' when it's clicked
-      G.button "Clickety Click" >>= \case
-        False -> return ()
-        True  -> putStrLn "Ow!"
+    bracket_ (G.begin "Client") G.end $
+      handle (catchWindowException "client" $ lcClientPendingException ctx) do
+        renderWindowException "client" (lcClientPendingException ctx)
+        stIn <- readIORef (lcClientWS ctx)
+        (_, out) <- runStateT ClientWindow.render stIn
+        writeIORef (lcClientWS ctx) $! out
 
     -- Render
     glClear GL_COLOR_BUFFER_BIT
@@ -100,16 +103,16 @@ mainLoop win ctx = do
 
     mainLoop win ctx
 
-catchWindowException :: IORef (Maybe String) -> SomeException -> IO ()
-catchWindowException store e = do
+catchWindowException :: String -> IORef (Maybe String) -> SomeException -> IO ()
+catchWindowException title store e = do
   print e
-  G.openPopup "Exception"
+  G.openPopup $ "Exception (" ++ title ++ ")"
   writeIORef store (Just $ show e)
 
-renderWindowException :: IORef (Maybe String) -> IO ()
-renderWindowException store = do
+renderWindowException :: String -> IORef (Maybe String) -> IO ()
+renderWindowException title store = do
   exc <- readIORef store
-  opened <- G.beginPopupModal "Exception"
+  opened <- G.beginPopupModal $ "Exception (" ++ title ++ ")"
   when opened do
     G.textWrapped $ fromMaybe "?" exc
     ok <- G.button "OK"

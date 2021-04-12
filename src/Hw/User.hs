@@ -1,4 +1,4 @@
-module Hw.User (UserInfo) where
+module Hw.User (UserInfo (UserInfo)) where
 
 data UserInfo = UserInfo {
 

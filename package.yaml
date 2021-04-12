@@ -30,6 +30,10 @@ dependencies:
 - mtl
 - lens
 - StateVar
+- stm
+- text
+- bytestring
+- process
 
 default-extensions:
 - OverloadedStrings
@@ -38,6 +42,7 @@ default-extensions:
 - FlexibleContexts
 - TemplateHaskell
 - ScopedTypeVariables
+- BangPatterns
 
 library:
   source-dirs: src

@@ -43,6 +43,7 @@ default-extensions:
 - TemplateHaskell
 - ScopedTypeVariables
 - BangPatterns
+- RankNTypes
 
 library:
   source-dirs: src

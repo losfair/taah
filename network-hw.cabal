@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 13e9c946cdf79b2bfd7b6bcdfa5ab0839dc3f0dc6c9564578d82a885596a3b58
+-- hash: 8eb3c801d19298c2385694bbe6294da523d553caa91689e81a6b0855c1be8988
 
 name:           network-hw
 version:        0.1.0.0
@@ -32,6 +32,7 @@ library
       Hw.ExecControl
       Hw.Gui.ClientWindow
       Hw.Gui.ServerWindow
+      Hw.Protocol
       Hw.Server
       Hw.TimeIt
       Hw.User
@@ -40,7 +41,7 @@ library
       Paths_network_hw
   hs-source-dirs:
       src
-  default-extensions: OverloadedStrings LambdaCase BlockArguments FlexibleContexts TemplateHaskell ScopedTypeVariables BangPatterns
+  default-extensions: OverloadedStrings LambdaCase BlockArguments FlexibleContexts TemplateHaskell ScopedTypeVariables BangPatterns RankNTypes
   build-depends:
       GLFW-b
     , StateVar
@@ -64,7 +65,7 @@ executable network-hw-server-exe
       Paths_network_hw
   hs-source-dirs:
       app
-  default-extensions: OverloadedStrings LambdaCase BlockArguments FlexibleContexts TemplateHaskell ScopedTypeVariables BangPatterns
+  default-extensions: OverloadedStrings LambdaCase BlockArguments FlexibleContexts TemplateHaskell ScopedTypeVariables BangPatterns RankNTypes
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       GLFW-b
@@ -91,7 +92,7 @@ test-suite network-hw-test
       Paths_network_hw
   hs-source-dirs:
       test
-  default-extensions: OverloadedStrings LambdaCase BlockArguments FlexibleContexts TemplateHaskell ScopedTypeVariables BangPatterns
+  default-extensions: OverloadedStrings LambdaCase BlockArguments FlexibleContexts TemplateHaskell ScopedTypeVariables BangPatterns RankNTypes
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       GLFW-b

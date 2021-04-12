@@ -23,6 +23,7 @@ import Data.ByteString.Internal (c2w)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Hw.ExecControl (runCommand)
+import Hw.Protocol
 
 newtype ServerException = ServerException String
   deriving (Show)
@@ -59,12 +60,6 @@ data ConnState = ConnState {
   _csEchoFilter :: Word8 -> Bool,
   _csTelnetControlState :: TelnetControlState
 }
-
-data TelnetControlState =
-  TcsIdle
-  | TcsGotIac
-  | TcsGotOption
-  deriving (Show)
 
 $(makeLenses ''ServiceState)
 $(makeLenses ''ConnState)
@@ -191,7 +186,7 @@ readBytesUntil st conn peer terminateCondition = do
         when (B.length nextBuf_ == 0) do
           liftIO $ throwIO $ ServerException "readBytesUntil: EOF"
 
-        nextBuf <- B.pack . map transformZero <$> filterM filterControl (B.unpack nextBuf_)
+        nextBuf <- B.pack . map transformZero <$> filterM (filterTelnetControl csTelnetControlState) (B.unpack nextBuf_)
         cs <- get
         let echoData = B.map (view csEchoMap cs) $ B.filter (view csEchoFilter cs) nextBuf
         mapM_ (writeMbus st . MsgChar peer) $ B.unpack echoData
@@ -202,23 +197,3 @@ readBytesUntil st conn peer terminateCondition = do
     transformZero :: Word8 -> Word8
     transformZero 0 = c2w '\n'
     transformZero x = x
-
-    filterControl :: (MonadState ConnState m) => Word8 -> m Bool
-    filterControl byte = do
-      cs <- get
-      case view csTelnetControlState cs of
-        TcsIdle ->
-          if byte == 255 then do
-            put $ set csTelnetControlState TcsGotIac cs
-            return False
-          else
-            return True
-        TcsGotIac -> do
-          if byte >= 251 && byte <= 254 then
-            put $ set csTelnetControlState TcsGotOption cs
-          else
-            put $ set csTelnetControlState TcsIdle cs
-          return False
-        TcsGotOption -> do
-          put $ set csTelnetControlState TcsIdle cs
-          return False

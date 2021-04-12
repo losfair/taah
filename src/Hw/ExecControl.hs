@@ -7,7 +7,7 @@ import Control.Monad.State (MonadIO, liftIO, MonadState (get, put), forever, Sta
 import Data.Word (Word8)
 import Data.Char
 import qualified System.Process as P
-import System.IO (Handle)
+import System.IO (Handle, BufferMode (NoBuffering, LineBuffering), hSetBuffering)
 import Control.Concurrent
 import Data.IORef
 import Hw.Concurrent
@@ -53,7 +53,8 @@ runCommand cmd_ streamBack nextByte = do
       get >>= liftIO . writeIORef stStore 
       -- ETX (Ctrl-C)
       unless (byte == 3) do
-        liftIO $ B.hPut (ipcStdin ipc) (B.singleton byte)
+        unless (byte == c2w '\r') do
+          liftIO $ B.hPut (ipcStdin ipc) (B.singleton byte)
         feedInputToProcess ipc nextByte stStore
 
     backPath :: (B.ByteString -> IO ()) -> IpcPrims -> IO ()
@@ -68,6 +69,7 @@ prepareProcess :: P.CreateProcess -> IO (P.CreateProcess, IpcPrims)
 prepareProcess p = do
   (stdinR, stdinW) <- P.createPipe
   (stdoutR, stdoutW) <- P.createPipe
+  hSetBuffering stdinW NoBuffering
   let cp = p {
     -- P.child_user = Just 65534,
     -- P.child_group = Just 65534,

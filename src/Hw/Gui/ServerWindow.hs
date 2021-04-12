@@ -109,7 +109,11 @@ renderLogs msgs = do
 
     foldLogs :: [LogEntry] -> [LogEntry]
     foldLogs !logs = case logs of
-      a:b:xs | isJust (leMsgCharAddr a) && leMsgCharAddr a == leMsgCharAddr b && head (leText b) /= '\n' ->
+      a:b:xs |
+        isJust (leMsgCharAddr a)
+          && leMsgCharAddr a == leMsgCharAddr b
+          && head (leText b) /= '\n'
+          && length (leText a) + length (leText b) <= 256 ->
         foldLogs $ b { leText = leText a ++ leText b } : xs 
       a:xs -> a : foldLogs xs
       [] -> []

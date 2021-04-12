@@ -50,7 +50,7 @@ library:
 executables:
   network-hw-server-exe:
     main:                Main.hs
-    source-dirs:         app-server
+    source-dirs:         app
     ghc-options:
     - -threaded
     - -rtsopts

@@ -22,4 +22,10 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/ocornut/imgui/files/3789205/vulkan-sdk-1.1.121.2.zip" -OutFile vulkan-sdk-1.1.121.2.zip
           Expand-Archive -Path vulkan-sdk-1.1.121.2.zip
           echo "VULKAN_SDK=$(pwd)\vulkan-sdk-1.1.121.2\" >>${env:GITHUB_ENV}
-      - run: stack build
+      - name: Build
+        run: stack build --copy-bins --local-bin-path .
+      - name: Upload binary
+        uses: actions/upload-artifact@v2
+        with:
+          name: windows-bin
+          path: network-hw-exe.exe

@@ -50,7 +50,7 @@ library:
   source-dirs: src
 
 executables:
-  network-hw-server-exe:
+  network-hw-exe:
     main:                Main.hs
     source-dirs:         app
     ghc-options:

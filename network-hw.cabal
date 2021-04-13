@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ac89640969689bdc1919f471a5383e18be5b3c30b82003d52dcd5b1f89c613bc
+-- hash: 089b6e6f5085364698ee7c27e5682d7c9f98b7d1e639193e97022de7c4a21565
 
 name:           network-hw
 version:        0.1.0.0
@@ -59,7 +59,7 @@ library
     , text
   default-language: Haskell2010
 
-executable network-hw-server-exe
+executable network-hw-exe
   main-is: Main.hs
   other-modules:
       Paths_network_hw

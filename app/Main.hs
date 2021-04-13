@@ -1,8 +1,11 @@
+{-# LANGUAGE CPP #-}
+
 import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Managed ( managed, managed_, runManaged )
 import qualified DearImGui as G
+import qualified DearImGui.Raw as GR
 import DearImGui.OpenGL2
 import DearImGui.GLFW
 import DearImGui.GLFW.OpenGL
@@ -39,7 +42,11 @@ main = do
 
         -- Initialize ImGui's OpenGL backend
         _ <- managed_ $ bracket_ openGL2Init openGL2Shutdown
-
+        liftIO do
+          (scaleX, scaleY) <- GLFW.getWindowContentScale win
+          let scale = scaleX * scaleY
+          GR.scaleAllSizes scale
+          putStrLn $ "Scale: " ++ show scale
         liftIO $ runMainLoop win
       Nothing -> do
         error "GLFW createWindow failed"

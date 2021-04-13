@@ -17,11 +17,15 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.Unsafe as BU
 import Data.Text.Encoding (decodeUtf8, encodeUtf8, decodeUtf8', decodeUtf8With)
 import Control.Exception
+import Foreign.Ptr (intPtrToPtr)
+import GHC.Exts (coerce)
+import GHC.Ptr
+import System.IO.Unsafe
 
 data St = St {
-  _stConnectAddrInput :: IORef String,
-  _stConnectServiceInput :: IORef String,
-  _stXmitBoxInput :: IORef String,
+  _stConnectAddrInput :: IORef B.ByteString,
+  _stConnectServiceInput :: IORef B.ByteString,
+  _stXmitBoxInput :: IORef B.ByteString,
   _stClient :: Maybe ClientApi,
   _stLogCache :: B.ByteString,
   _stXmitLastLen :: Int
@@ -48,16 +52,16 @@ render = do
   current <- get
   case view stClient current of
     Just client -> do
-      wantsDisconnect <- G.button "Disconnect"
-      enterPressed <- G.inputTextEnterReturnsTrue "Xmit" (view stXmitBoxInput current) 256
+      wantsDisconnect <- GR.button $ Ptr "Disconnect"#
+      enterPressed <- G.inputTextB "Xmit" (view stXmitBoxInput current) 256 True
 
       xmitBox <- liftIO $ readIORef (view stXmitBoxInput current)
       let lastLen = view stXmitLastLen current
-      let !thisLen = length xmitBox
+      let !thisLen = B.length xmitBox
       put $ set stXmitLastLen thisLen current
-      let added = drop lastLen xmitBox
-      unless (null added) do
-        liftIO $ writeData client $ encodeUtf8 $ T.pack added
+      let added = B.drop lastLen xmitBox
+      unless (B.null added) do
+        liftIO $ writeData client added
       when enterPressed do
         liftIO $ writeIORef (view stXmitBoxInput current) ""
         put $ set stXmitLastLen 0 current
@@ -78,13 +82,13 @@ render = do
           liftIO $ closeClient client
           put $ set stClient Nothing current
     Nothing -> do
-      G.inputText "Connect address" (view stConnectAddrInput current) 256
-      G.inputText "Service/port" (view stConnectServiceInput current) 32
-      wantsConnect <- G.button "Connect"
+      G.inputTextB "Connect address" (view stConnectAddrInput current) 128 False
+      G.inputTextB "Service/port" (view stConnectServiceInput current) 32 False
+      wantsConnect <- GR.button $ Ptr "Connect"#
       renderLogs []
       when wantsConnect do
-        ip <- liftIO $ readIORef (view stConnectAddrInput current)
-        service <- liftIO $ readIORef (view stConnectServiceInput current)
+        ip <- liftIO $ T.unpack . decodeUtf8 <$> readIORef (view stConnectAddrInput current)
+        service <- liftIO $ T.unpack . decodeUtf8 <$> readIORef (view stConnectServiceInput current)
         client <- liftIO $ generateClient ClientConfig { cfgConnectIP = ip, cfgConnectService = service }
 
         -- Flush state & set client
@@ -112,7 +116,7 @@ renderLogs msgs = do
   G.spacing
 
   current <- get
-  G.beginChild "ConsoleView"
+  GR.beginChild $ Ptr "ConsoleView"#
   let logCache = view stLogCache current
   unless (B.null logCache) do
     liftIO $ renderItem $ view stLogCache current

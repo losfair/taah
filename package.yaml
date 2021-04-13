@@ -44,6 +44,7 @@ default-extensions:
 - ScopedTypeVariables
 - BangPatterns
 - RankNTypes
+- MagicHash
 
 library:
   source-dirs: src

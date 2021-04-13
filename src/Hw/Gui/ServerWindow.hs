@@ -16,11 +16,12 @@ import Data.Maybe
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Unsafe as BU
 import Data.Text.Encoding
+import GHC.Exts
 
 data St = St {
   _stListener :: Maybe ServerApi,
-  _stListenAddrInput :: IORef String,
-  _stListenServiceInput :: IORef String,
+  _stListenAddrInput :: IORef B.ByteString,
+  _stListenServiceInput :: IORef B.ByteString,
   _stLogs :: ![LogEntry],
   _stLogCache :: B.ByteString
 }
@@ -58,12 +59,12 @@ render = do
       bufferedMsgs <- liftIO $ atomically $ flushTQueue $ apiMessageBus listener
       renderLogs bufferedMsgs
     Nothing -> do
-      G.inputText "Listen address" (view stListenAddrInput current) 256
-      G.inputText "Service/port" (view stListenServiceInput current) 32
-      wantsListen <- G.button "Listen"
+      G.inputTextB "Listen address" (view stListenAddrInput current) 128 False
+      G.inputTextB "Service/port" (view stListenServiceInput current) 32 False
+      wantsListen <- GR.button $ Ptr "Listen"#
       when wantsListen do
-        listenIP <- liftIO $ readIORef (view stListenAddrInput current)
-        listenService <- liftIO $ readIORef (view stListenServiceInput current)
+        listenIP <- liftIO $ T.unpack . decodeUtf8 <$> readIORef (view stListenAddrInput current)
+        listenService <- liftIO $ T.unpack . decodeUtf8 <$> readIORef (view stListenServiceInput current)
         let config = ServerConfig {
           cfgListenIP = listenIP,
           cfgListenService = listenService,
@@ -85,7 +86,7 @@ renderLogs msgs = do
     get >>= put . set stLogCache (encodeUtf8 $ T.intercalate "\n" $ map renderItem $ reverse newLogs)
 
   current <- get
-  G.beginChild "ConsoleView"
+  GR.beginChild $ Ptr "ConsoleView"#
   let logCache = view stLogCache current
   unless (B.null logCache) do
     liftIO $ BU.unsafeUseAsCStringLen logCache GR.textUnformatted

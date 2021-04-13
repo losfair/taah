@@ -14,6 +14,7 @@ import Hw.TimeIt (timeItNamed)
 import Data.Maybe
 import Hw.Client
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Unsafe as BU
 import Data.Text.Encoding (decodeUtf8, encodeUtf8, decodeUtf8', decodeUtf8With)
 import Control.Exception
 
@@ -22,7 +23,7 @@ data St = St {
   _stConnectServiceInput :: IORef String,
   _stXmitBoxInput :: IORef String,
   _stClient :: Maybe ClientApi,
-  _stLogCache :: T.Text,
+  _stLogCache :: B.ByteString,
   _stXmitLastLen :: Int
 }
 
@@ -38,7 +39,7 @@ mkSt = do
     _stConnectServiceInput = connectServiceInput,
     _stXmitBoxInput = xmitBoxInput,
     _stClient = Nothing,
-    _stLogCache = T.empty,
+    _stLogCache = B.empty,
     _stXmitLastLen = 0
   }
 
@@ -90,7 +91,7 @@ render = do
         liftIO $ writeIORef (view stXmitBoxInput current) ""
         put $
           set stXmitLastLen 0 $
-          set stLogCache T.empty $
+          set stLogCache B.empty $
           set stClient (Just client)
           current
         return ()
@@ -101,7 +102,7 @@ renderLogs :: (MonadIO m, MonadState St m) => [T.Text] -> m ()
 renderLogs msgs = do
   unless (null msgs) $ timeItNamed "client_renderLogs" do
     current <- get
-    let cache = genCache (view stLogCache current:msgs)
+    let cache = genCache (view stLogCache current) msgs
     put $
       set stLogCache cache
       current
@@ -113,7 +114,7 @@ renderLogs msgs = do
   current <- get
   G.beginChild "ConsoleView"
   let logCache = view stLogCache current
-  unless (T.null logCache) do
+  unless (B.null logCache) do
     liftIO $ renderItem $ view stLogCache current
   unless (null msgs) do
     liftIO $ G.setScrollHereY 1.0
@@ -122,8 +123,8 @@ renderLogs msgs = do
   return ()
 
   where
-    genCache :: [T.Text] -> T.Text
-    genCache = T.takeEnd 65536 . T.concat
+    genCache :: B.ByteString -> [T.Text] -> B.ByteString
+    genCache prev new = encodeUtf8 $ T.takeEnd 65536 $ T.concat (decodeUtf8 prev : new)
 
-    renderItem :: T.Text -> IO ()
-    renderItem text = TF.withCStringLen text GR.textUnformatted
+    renderItem :: B.ByteString -> IO ()
+    renderItem text = BU.unsafeUseAsCStringLen text GR.textUnformatted

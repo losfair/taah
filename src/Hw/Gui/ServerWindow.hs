@@ -13,13 +13,16 @@ import qualified Network.Socket as Sock
 import Data.ByteString.Internal (w2c)
 import Hw.TimeIt (timeItNamed)
 import Data.Maybe
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Unsafe as BU
+import Data.Text.Encoding
 
 data St = St {
   _stListener :: Maybe ServerApi,
   _stListenAddrInput :: IORef String,
   _stListenServiceInput :: IORef String,
   _stLogs :: ![LogEntry],
-  _stLogCache :: T.Text
+  _stLogCache :: B.ByteString
 }
 
 data LogEntry = LogEntry {
@@ -38,7 +41,7 @@ mkSt = do
     _stListenAddrInput = listenAddrInput,
     _stListenServiceInput = listenServiceInput,
     _stLogs = [],
-    _stLogCache = T.empty
+    _stLogCache = B.empty
   }
 
 render :: (MonadIO m, MonadState St m) => m ()
@@ -79,13 +82,13 @@ renderLogs msgs = do
     let prevLogs = take 100 $ view stLogs current
     let newLogs = foldLogs $ appendLogs ++ prevLogs
     get >>= put . set stLogs newLogs
-    get >>= put . set stLogCache (T.intercalate "\n" $ map renderItem $ reverse newLogs)
+    get >>= put . set stLogCache (encodeUtf8 $ T.intercalate "\n" $ map renderItem $ reverse newLogs)
 
   current <- get
   G.beginChild "ConsoleView"
   let logCache = view stLogCache current
-  unless (T.null logCache) do
-    liftIO $ TF.withCStringLen logCache GR.textUnformatted
+  unless (B.null logCache) do
+    liftIO $ BU.unsafeUseAsCStringLen logCache GR.textUnformatted
   unless (null msgs) do
     liftIO $ G.setScrollHereY 1.0
   G.endChild

@@ -3,3 +3,4 @@
 /imgui.ini
 /users.db
 *.exe
+.DS_Store

@@ -17,6 +17,7 @@ import Data.IORef
 import qualified Hw.Gui.ServerWindow as ServerWindow
 import qualified Hw.Gui.ClientWindow as ClientWindow
 import Data.Maybe
+import GHC.Ptr
 
 main :: IO ()
 main = do
@@ -59,7 +60,8 @@ data LoopContext = LoopContext {
   lcServerWS :: IORef ServerWindow.St,
   lcClientWS :: IORef ClientWindow.St,
   lcServerPendingException :: IORef (Maybe String),
-  lcClientPendingException :: IORef (Maybe String)
+  lcClientPendingException :: IORef (Maybe String),
+  lcFont :: GR.Font
 }
 
 runMainLoop :: Window -> IO ()
@@ -68,11 +70,13 @@ runMainLoop win = do
   serverPendingException <- newIORef Nothing
   clientWS <- ClientWindow.mkSt >>= newIORef
   clientPendingException <- newIORef Nothing
+  font <- GR.addFontFromFileTTF (Ptr "fonts/Menlo-Regular-01.ttf"#) 16
   let ctx = LoopContext {
     lcServerWS = serverWS,
     lcServerPendingException = serverPendingException,
     lcClientWS = clientWS,
-    lcClientPendingException = clientPendingException
+    lcClientPendingException = clientPendingException,
+    lcFont = font
   }
   mainLoop win ctx
 

@@ -42,11 +42,13 @@ main = do
 
         -- Initialize ImGui's OpenGL backend
         _ <- managed_ $ bracket_ openGL2Init openGL2Shutdown
+#ifdef mingw32_HOST_OS
         liftIO do
           (scaleX, scaleY) <- GLFW.getWindowContentScale win
           let scale = scaleX * scaleY
           GR.scaleAllSizes scale
           putStrLn $ "Scale: " ++ show scale
+#endif
         liftIO $ runMainLoop win
       Nothing -> do
         error "GLFW createWindow failed"

@@ -24,6 +24,7 @@ import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Hw.ExecControl (runCommand)
 import Hw.Protocol
+import Data.Maybe (isNothing)
 
 newtype ServerException = ServerException String
   deriving (Show)
@@ -58,7 +59,8 @@ data ConnState = ConnState {
   _csRecvBuffer :: B.ByteString,
   _csEchoMap :: Word8 -> Word8,
   _csEchoFilter :: Word8 -> Bool,
-  _csTelnetControlState :: TelnetControlState
+  _csTelnetControlState :: TelnetControlState,
+  _csIncomingBytes :: TQueue (Maybe B.ByteString)
 }
 
 $(makeLenses ''ServiceState)
@@ -70,6 +72,7 @@ generateServer config = do
   resolvedAddr <- resolve
   listener <- listen resolvedAddr
   messageBus <- newTQueueIO
+  incomingBytes <- newTQueueIO
   let st = ServiceState {
     _stDbConn = dbConn,
     _stListener = listener,
@@ -93,15 +96,28 @@ generateServer config = do
 runServer :: ServiceState -> IO ()
 runServer st = forever do
   (conn, peer) <- onException (Sock.accept $ view stListener st) (Sock.close $ view stListener st)
+  incomingBytes <- newTQueueIO
   let connState = ConnState {
     _csRecvBuffer = B.empty,
     _csEchoMap = id,
     _csEchoFilter = const True,
-    _csTelnetControlState = TcsIdle
+    _csTelnetControlState = TcsIdle,
+    _csIncomingBytes = incomingBytes
   }
+  closeSock <- newTQueueIO
+  forkIO $ finally
+    (feedIncomingBytes conn incomingBytes)
+    $ (try $ Sock.shutdown conn Sock.ShutdownBoth :: IO (Either SomeException ()))
+      >> atomically (writeTQueue closeSock ())
   forkIO $ finally
     (handle (onConnException conn peer) (evalStateT (handleConnection st conn peer) connState))
-    (Sock.close conn >> writeMbus st (MsgClientClosed peer))
+    $ (try $ Sock.shutdown conn Sock.ShutdownBoth :: IO (Either SomeException ()))
+      >> atomically (writeTQueue closeSock ())
+  forkIO $
+    atomically (readTQueue closeSock)
+    >> atomically (readTQueue closeSock)
+    >> Sock.close conn
+    >> writeMbus st (MsgClientClosed peer)
   return ()
 
 onConnException :: Sock.Socket -> Sock.SockAddr -> SomeException -> IO ()
@@ -166,6 +182,16 @@ enterSession st conn peer username = do
       (B.head <$> readBytesUntil st conn peer (const True))
     return ()
 
+feedIncomingBytes :: Sock.Socket -> TQueue (Maybe B.ByteString) -> IO ()
+feedIncomingBytes sock q = finally m do
+  atomically $ writeTQueue q Nothing
+  where
+    m = do
+      buf <- SockBS.recv sock 4096
+      unless (B.null buf) do
+        atomically $ writeTQueue q $ Just buf
+        m
+
 readBytesUntil :: (MonadIO m, MonadState ConnState m) => ServiceState -> Sock.Socket -> Sock.SockAddr -> (Word8 -> Bool) -> m B.ByteString
 readBytesUntil st conn peer terminateCondition = do
   cs <- get
@@ -181,13 +207,19 @@ readBytesUntil st conn peer terminateCondition = do
         get >>= put . set csRecvBuffer (B.drop i x)
         return [B.take i x]
       Nothing -> do
-        nextBuf_ <- liftIO $ SockBS.recv conn 4096
-        -- Check before filtering
-        when (B.length nextBuf_ == 0) do
-          liftIO $ throwIO $ ServerException "readBytesUntil: EOF"
+        cs <- get
+        nextBuf_' <- liftIO $ atomically do
+          -- Fused read
+          item <- readTQueue (view csIncomingBytes cs)
+          when (isNothing item) $
+            unGetTQueue (view csIncomingBytes cs) Nothing
+          return item
+
+        nextBuf_ <- case nextBuf_' of
+          Just x -> return x
+          Nothing -> liftIO $ throwIO $ ServerException "readBytesUntil: EOF"
 
         nextBuf <- B.pack . map transformZero <$> filterM (filterTelnetControl csTelnetControlState) (B.unpack nextBuf_)
-        cs <- get
         let echoData = B.map (view csEchoMap cs) $ B.filter (view csEchoFilter cs) nextBuf
         mapM_ (writeMbus st . MsgChar peer) $ B.unpack echoData
         liftIO $ SockBS.sendAll conn echoData

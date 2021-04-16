@@ -3,7 +3,7 @@ module Hw.ExecControl (runCommand) where
 import qualified Data.Text as T
 import qualified Data.ByteString as B
 import Control.Exception
-import Control.Monad.State (MonadIO, liftIO, MonadState (get, put), forever, StateT (runStateT), unless, when, evalStateT)
+import Control.Monad.State (MonadIO, liftIO, MonadState (get, put), forever, StateT (runStateT), unless, when, evalStateT, forM_)
 import Data.Word (Word8)
 import Data.Char
 import qualified System.Process as P
@@ -27,8 +27,9 @@ runCommand cmd_ streamBack nextByte = do
   let !cmd = T.strip cmd_
   liftIO $ putStrLn $ "Running command: " ++ show cmd
 
-  (creationInfo, ipc) <- liftIO $ prepareProcess $ P.shell $ T.unpack cmd
+  (creationInfo, ipc, handlesToClose) <- liftIO $ prepareProcess $ P.shell $ T.unpack cmd
   (_, _, _, procHandle) <- liftIO $ P.createProcess creationInfo
+  liftIO $ forM_ handlesToClose hClose
 
   signal <- liftIO mkSignal
 
@@ -67,7 +68,7 @@ runCommand cmd_ streamBack nextByte = do
         streamBack d
         backPath streamBack prims
 
-prepareProcess :: P.CreateProcess -> IO (P.CreateProcess, IpcPrims)
+prepareProcess :: P.CreateProcess -> IO (P.CreateProcess, IpcPrims, [Handle])
 prepareProcess p = do
   (stdinR, stdinW) <- P.createPipe
   (stdoutR, stdoutW) <- P.createPipe
@@ -79,7 +80,7 @@ prepareProcess p = do
     P.std_out = P.UseHandle stdoutW,
     P.std_err = P.UseHandle stdoutW
   }
-  return (cp, IpcPrims { ipcStdin = stdinW, ipcStdout = stdoutR })
+  return (cp, IpcPrims { ipcStdin = stdinW, ipcStdout = stdoutR }, [stdinR, stdoutW])
 
 replaceNewline :: Word8 -> [Word8]
 replaceNewline x = if x == c2w '\n' then [c2w '\r', c2w '\n'] else [x]

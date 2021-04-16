@@ -64,7 +64,9 @@ generateClient cfg = do
     csDataRecv = dataRecv
   }
   serviceTid <- forkIO $ catch
-    (finally (runService service sock) (Sock.close sock))
+    (finally (runService service sock) (
+      tryShutdown sock
+      >> Sock.close sock))
     (atomically . writeTQueue dataRecv . RecvException . show :: SomeException -> IO ())
 
   let api = ClientApi {
@@ -84,7 +86,10 @@ closeClient :: ClientApi -> IO ()
 closeClient api = do
   killThread $ apiKillHandle api
   -- Interrupt ongoing socket receives.
-  void (try $ Sock.shutdown (apiSocket api) Sock.ShutdownBoth :: IO (Either SomeException ()))
+  tryShutdown $ apiSocket api
+
+tryShutdown :: Sock.Socket -> IO ()
+tryShutdown sock = void (try $ Sock.shutdown sock Sock.ShutdownBoth :: IO (Either SomeException ()))
 
 tryReadData :: ClientApi -> IO [B.ByteString]
 tryReadData api = do

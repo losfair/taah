@@ -26,7 +26,7 @@ main = do
 
   runManaged $ do
     mwin <- managed $ bracket
-      (GLFW.createWindow 800 600 "Hello, Dear ImGui!" Nothing Nothing)
+      (GLFW.createWindow 800 600 "Telnet Demo" Nothing Nothing)
       (maybe (return ()) GLFW.destroyWindow)
     case mwin of
       Just win -> do
